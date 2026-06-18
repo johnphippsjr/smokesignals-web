@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "vite",
-    "build": "vite build",
+    "build": "node scripts/check-crypto-policy.mjs && vite build",
+    "verify:crypto-policy": "node scripts/check-crypto-policy.mjs",
     "preview": "vite preview",
     "lint": "yarn check:eslint && yarn check:prettier",
     "check:eslint": "eslint src/*",

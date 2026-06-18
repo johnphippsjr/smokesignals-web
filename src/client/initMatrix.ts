@@ -1,4 +1,5 @@
 import { createClient, MatrixClient, IndexedDBStore, IndexedDBCryptoStore } from 'matrix-js-sdk';
+import { OnlySignedDevicesIsolationMode } from 'matrix-js-sdk/lib/crypto-api';
 
 import { cryptoCallbacks } from './secretStorageKeys';
 import { clearNavToActivePathStore } from '../app/state/navToActivePath';
@@ -34,6 +35,19 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
 
   await indexedDBStore.startup();
   await mx.initRustCrypto();
+
+  // smokesignals §9.1 — verification enforcement (hard key-withholding). TWO INDEPENDENT
+  // controls so a malicious/compromised homeserver cannot read content by injecting an
+  // un-cross-signed device. Asserted by scripts/check-crypto-policy.mjs (CI guard).
+  // DO NOT weaken to warn-only — this is the load-bearing confidentiality control.
+  const crypto = mx.getCrypto();
+  if (crypto) {
+    // OUTBOUND: never share room (Megolm) keys with devices that are not cross-signed.
+    crypto.globalBlacklistUnverifiedDevices = true;
+    // INBOUND: only decrypt events from cross-signed devices; events from unsigned devices
+    // fail to decrypt and are surfaced as untrusted (never silently rendered as trusted).
+    crypto.setDeviceIsolationMode(new OnlySignedDevicesIsolationMode());
+  }
 
   mx.setMaxListeners(50);
 
