@@ -3,13 +3,13 @@ import {
   Box,
   Button,
   Chip,
-  Header,
   Icon,
   IconButton,
   Icons,
   Input,
   Scroll,
   Spinner,
+  Switch,
   Text,
   color,
   config,
@@ -17,6 +17,10 @@ import {
 import { Method } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../../hooks/useMatrixClient';
 import { copyToClipboard } from '../../../utils/dom';
+import { Page, PageContent, PageHeader } from '../../../components/page';
+import { SequenceCard } from '../../../components/sequence-card';
+import { SettingTile } from '../../../components/setting-tile';
+import { SequenceCardStyle } from '../styles.css';
 
 // smokesignals admin panel — embedded in Settings, gated to server admins. Calls the
 // Synapse admin API with the user's EXISTING access token (true SSO, no second login).
@@ -41,13 +45,11 @@ export function Admin({ requestClose }: { requestClose: () => void }) {
   const mx = useMatrixClient();
   const domain = mx.getDomain() ?? '';
 
-  // --- registration tokens ---
   const [tokens, setTokens] = useState<RegistrationToken[]>([]);
   const [tokensLoading, setTokensLoading] = useState(true);
   const [uses, setUses] = useState('10');
   const [creatingToken, setCreatingToken] = useState(false);
 
-  // --- users ---
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [newLocalpart, setNewLocalpart] = useState('');
@@ -164,224 +166,246 @@ export function Admin({ requestClose }: { requestClose: () => void }) {
   };
 
   const setDeactivated = async (userId: string, deactivate: boolean) => {
-    // eslint-disable-next-line no-alert
-    if (deactivate && !window.confirm(`Deactivate ${userId}? They will be logged out.`)) return;
-    setError(undefined);
-    try {
-      if (deactivate) {
+    if (deactivate) {
+      // eslint-disable-next-line no-alert
+      if (!window.confirm(`Deactivate ${userId}? They will be logged out.`)) return;
+      try {
         await req(Method.Post, `/v1/deactivate/${encodeURIComponent(userId)}`, { erase: false });
-      } else {
-        // reactivate = set a password via the v2 users API
-        // eslint-disable-next-line no-alert
-        const pw = window.prompt(`Set a password to reactivate ${userId}:`);
-        if (!pw) return;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to deactivate');
+        return;
+      }
+    } else {
+      // eslint-disable-next-line no-alert
+      const pw = window.prompt(`Set a password to reactivate ${userId}:`);
+      if (!pw) return;
+      try {
         await req(Method.Put, `/v2/users/${encodeURIComponent(userId)}`, {
           password: pw,
           deactivated: false,
         });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to reactivate');
+        return;
       }
-      await loadUsers();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update user');
     }
+    await loadUsers();
   };
 
   return (
-    <Box grow="Yes" direction="Column">
-      <Header size="600" style={{ paddingLeft: config.space.S400, paddingRight: config.space.S200 }}>
-        <Box grow="Yes">
-          <Text size="H3">Admin</Text>
+    <Page>
+      <PageHeader outlined={false}>
+        <Box grow="Yes" gap="200">
+          <Box grow="Yes" alignItems="Center" gap="200">
+            <Text size="H3" truncate>
+              Admin
+            </Text>
+          </Box>
+          <Box shrink="No">
+            <IconButton onClick={requestClose} variant="Surface">
+              <Icon src={Icons.Cross} />
+            </IconButton>
+          </Box>
         </Box>
-        <IconButton onClick={requestClose} variant="Background">
-          <Icon src={Icons.Cross} />
-        </IconButton>
-      </Header>
+      </PageHeader>
       <Box grow="Yes">
         <Scroll hideTrack visibility="Hover">
-          <Box direction="Column" gap="700" style={{ padding: config.space.S400 }}>
-            {error && (
-              <Text size="T200" style={{ color: color.Critical.Main }}>
-                {error}
-              </Text>
-            )}
-
-            {/* ---- Registration tokens ---- */}
-            <Box direction="Column" gap="300">
-              <Box direction="Column" gap="100">
-                <Text size="H4">Registration tokens (invites)</Text>
-                <Text size="T200" priority="300">
-                  Share a token to let someone sign up. Tokens are the only way to register.
+          <PageContent>
+            <Box direction="Column" gap="700">
+              {error && (
+                <Text size="T200" style={{ color: color.Critical.Main }}>
+                  {error}
                 </Text>
-              </Box>
-              <Box gap="200" alignItems="End">
-                <Box direction="Column" gap="100" style={{ maxWidth: 140 }}>
-                  <Text size="L400">Uses allowed</Text>
-                  <Input
-                    value={uses}
-                    onChange={(evt) => setUses(evt.currentTarget.value)}
-                    type="number"
-                    size="400"
-                  />
-                </Box>
-                <Button
-                  variant="Primary"
-                  size="400"
-                  radii="300"
-                  onClick={createToken}
-                  disabled={creatingToken}
-                  before={
-                    creatingToken ? <Spinner size="200" variant="Primary" fill="Solid" /> : undefined
-                  }
+              )}
+
+              {/* ---- Registration tokens ---- */}
+              <Box direction="Column" gap="100">
+                <Text size="L400">Registration tokens (invites)</Text>
+                <SequenceCard
+                  className={SequenceCardStyle}
+                  variant="SurfaceVariant"
+                  direction="Column"
+                  gap="400"
                 >
-                  <Text size="B400">Create token</Text>
-                </Button>
-                <Button variant="Secondary" fill="Soft" size="400" radii="300" onClick={loadTokens}>
-                  <Text size="B400">Refresh</Text>
-                </Button>
-              </Box>
-              {tokensLoading ? (
-                <Spinner size="400" />
-              ) : (
-                <Box direction="Column" gap="200">
-                  {tokens.length === 0 && (
-                    <Text size="T200" priority="300">
-                      No tokens yet.
-                    </Text>
-                  )}
-                  {tokens.map((t) => (
-                    <Box
+                  <SettingTile
+                    title="Create invite token"
+                    description="Share a token to let someone register — it's the only way to sign up."
+                    after={
+                      <Box gap="200" alignItems="Center">
+                        <Input
+                          value={uses}
+                          onChange={(evt) => setUses(evt.currentTarget.value)}
+                          type="number"
+                          size="300"
+                          style={{ maxWidth: 72 }}
+                        />
+                        <Button
+                          variant="Primary"
+                          size="300"
+                          radii="300"
+                          onClick={createToken}
+                          disabled={creatingToken}
+                          before={
+                            creatingToken ? (
+                              <Spinner size="100" variant="Primary" fill="Solid" />
+                            ) : undefined
+                          }
+                        >
+                          <Text size="B300">Create</Text>
+                        </Button>
+                      </Box>
+                    }
+                  />
+                </SequenceCard>
+
+                {tokensLoading ? (
+                  <Spinner size="400" />
+                ) : (
+                  tokens.map((t) => (
+                    <SequenceCard
                       key={t.token}
-                      alignItems="Center"
-                      gap="200"
-                      style={{
-                        padding: config.space.S200,
-                        borderRadius: config.radii.R400,
-                        backgroundColor: color.SurfaceVariant.Container,
-                      }}
+                      className={SequenceCardStyle}
+                      variant="SurfaceVariant"
+                      direction="Column"
                     >
-                      <Box grow="Yes" direction="Column">
-                        <Text size="T300" style={{ fontFamily: 'monospace' }}>
-                          {t.token}
-                        </Text>
-                        <Text size="T200" priority="300">
-                          used {t.completed}
-                          {t.uses_allowed != null ? `/${t.uses_allowed}` : ' (unlimited)'}
-                          {t.expiry_time
-                            ? ` · expires ${new Date(t.expiry_time).toLocaleDateString()}`
-                            : ''}
-                        </Text>
-                      </Box>
-                      <Chip variant="Secondary" radii="Pill" onClick={() => copyToClipboard(t.token)}>
-                        <Text size="B300">Copy</Text>
-                      </Chip>
-                      <IconButton
-                        size="300"
-                        radii="300"
-                        variant="Critical"
-                        fill="None"
-                        onClick={() => deleteToken(t.token)}
-                      >
-                        <Icon src={Icons.Delete} />
-                      </IconButton>
-                    </Box>
-                  ))}
-                </Box>
-              )}
-            </Box>
-
-            {/* ---- Users ---- */}
-            <Box direction="Column" gap="300">
-              <Box direction="Column" gap="100">
-                <Text size="H4">Users</Text>
-                <Text size="T200" priority="300">
-                  Create accounts, reset passwords (incl. your own), and deactivate.
-                </Text>
-              </Box>
-              <Box gap="200" alignItems="End" wrap="Wrap">
-                <Box direction="Column" gap="100" style={{ maxWidth: 160 }}>
-                  <Text size="L400">Username</Text>
-                  <Input
-                    value={newLocalpart}
-                    onChange={(evt) => setNewLocalpart(evt.currentTarget.value)}
-                    size="400"
-                    placeholder="alice"
-                  />
-                </Box>
-                <Box direction="Column" gap="100" style={{ maxWidth: 180 }}>
-                  <Text size="L400">Password</Text>
-                  <Input
-                    value={newPassword}
-                    onChange={(evt) => setNewPassword(evt.currentTarget.value)}
-                    type="password"
-                    size="400"
-                  />
-                </Box>
-                <Chip
-                  variant={newAdmin ? 'Primary' : 'Secondary'}
-                  radii="Pill"
-                  onClick={() => setNewAdmin((v) => !v)}
-                >
-                  <Text size="B300">{newAdmin ? 'Admin ✓' : 'Make admin'}</Text>
-                </Chip>
-                <Button
-                  variant="Primary"
-                  size="400"
-                  radii="300"
-                  onClick={createUser}
-                  disabled={busy}
-                  before={busy ? <Spinner size="200" variant="Primary" fill="Solid" /> : undefined}
-                >
-                  <Text size="B400">Create user</Text>
-                </Button>
-                <Button variant="Secondary" fill="Soft" size="400" radii="300" onClick={loadUsers}>
-                  <Text size="B400">Refresh</Text>
-                </Button>
-              </Box>
-              {usersLoading ? (
-                <Spinner size="400" />
-              ) : (
-                <Box direction="Column" gap="200">
-                  {users.map((u) => (
-                    <Box
-                      key={u.name}
-                      alignItems="Center"
-                      gap="200"
-                      style={{
-                        padding: config.space.S200,
-                        borderRadius: config.radii.R400,
-                        backgroundColor: color.SurfaceVariant.Container,
-                      }}
-                    >
-                      <Box grow="Yes" direction="Column">
-                        <Text size="T300">
-                          {u.name}
-                          {u.admin ? '  · admin' : ''}
-                          {u.deactivated ? '  · deactivated' : ''}
-                        </Text>
-                        {u.displayname && (
-                          <Text size="T200" priority="300">
-                            {u.displayname}
+                      <SettingTile
+                        title={
+                          <Text size="T300" style={{ fontFamily: 'monospace' }}>
+                            {t.token}
                           </Text>
-                        )}
-                      </Box>
-                      <Chip variant="Secondary" radii="Pill" onClick={() => resetPassword(u.name)}>
-                        <Text size="B300">Reset password</Text>
-                      </Chip>
-                      <Chip
-                        variant={u.deactivated ? 'Success' : 'Critical'}
-                        radii="Pill"
-                        onClick={() => setDeactivated(u.name, !u.deactivated)}
-                      >
-                        <Text size="B300">{u.deactivated ? 'Reactivate' : 'Deactivate'}</Text>
-                      </Chip>
+                        }
+                        description={`used ${t.completed}${
+                          t.uses_allowed != null ? `/${t.uses_allowed}` : ' (unlimited)'
+                        }${
+                          t.expiry_time
+                            ? ` · expires ${new Date(t.expiry_time).toLocaleDateString()}`
+                            : ''
+                        }`}
+                        after={
+                          <Box gap="200" alignItems="Center">
+                            <Chip
+                              variant="Secondary"
+                              radii="Pill"
+                              onClick={() => copyToClipboard(t.token)}
+                            >
+                              <Text size="B300">Copy</Text>
+                            </Chip>
+                            <IconButton
+                              size="300"
+                              radii="300"
+                              variant="Critical"
+                              fill="None"
+                              onClick={() => deleteToken(t.token)}
+                            >
+                              <Icon src={Icons.Delete} size="100" />
+                            </IconButton>
+                          </Box>
+                        }
+                      />
+                    </SequenceCard>
+                  ))
+                )}
+              </Box>
+
+              {/* ---- Users ---- */}
+              <Box direction="Column" gap="100">
+                <Text size="L400">Users</Text>
+                <SequenceCard
+                  className={SequenceCardStyle}
+                  variant="SurfaceVariant"
+                  direction="Column"
+                  gap="400"
+                >
+                  <SettingTile
+                    title="Create user"
+                    description="Add an account directly (or send an invite token instead)."
+                  />
+                  <Box gap="200" alignItems="End" wrap="Wrap">
+                    <Box direction="Column" gap="100" style={{ maxWidth: 160 }}>
+                      <Text size="L400">Username</Text>
+                      <Input
+                        value={newLocalpart}
+                        onChange={(evt) => setNewLocalpart(evt.currentTarget.value)}
+                        size="400"
+                        placeholder="alice"
+                      />
                     </Box>
-                  ))}
-                </Box>
-              )}
+                    <Box direction="Column" gap="100" style={{ maxWidth: 180 }}>
+                      <Text size="L400">Password</Text>
+                      <Input
+                        value={newPassword}
+                        onChange={(evt) => setNewPassword(evt.currentTarget.value)}
+                        type="password"
+                        size="400"
+                      />
+                    </Box>
+                    <Box alignItems="Center" gap="200" style={{ height: 38 }}>
+                      <Text size="T200">Admin</Text>
+                      <Switch variant="Primary" value={newAdmin} onChange={setNewAdmin} />
+                    </Box>
+                    <Button
+                      variant="Primary"
+                      size="400"
+                      radii="300"
+                      onClick={createUser}
+                      disabled={busy}
+                      before={busy ? <Spinner size="200" variant="Primary" fill="Solid" /> : undefined}
+                    >
+                      <Text size="B400">Create user</Text>
+                    </Button>
+                  </Box>
+                </SequenceCard>
+
+                {usersLoading ? (
+                  <Spinner size="400" />
+                ) : (
+                  users.map((u) => (
+                    <SequenceCard
+                      key={u.name}
+                      className={SequenceCardStyle}
+                      variant="SurfaceVariant"
+                      direction="Column"
+                    >
+                      <SettingTile
+                        title={
+                          <Box gap="200" alignItems="Center">
+                            <Text size="T300">{u.name}</Text>
+                            {!!u.admin && (
+                              <Chip variant="Primary" radii="Pill" as="span">
+                                <Text size="B300">admin</Text>
+                              </Chip>
+                            )}
+                            {!!u.deactivated && (
+                              <Chip variant="Critical" radii="Pill" as="span">
+                                <Text size="B300">deactivated</Text>
+                              </Chip>
+                            )}
+                          </Box>
+                        }
+                        description={u.displayname || undefined}
+                        after={
+                          <Box gap="200" alignItems="Center">
+                            <Chip variant="Secondary" radii="Pill" onClick={() => resetPassword(u.name)}>
+                              <Text size="B300">Reset password</Text>
+                            </Chip>
+                            <Chip
+                              variant={u.deactivated ? 'Success' : 'Critical'}
+                              radii="Pill"
+                              onClick={() => setDeactivated(u.name, !u.deactivated)}
+                            >
+                              <Text size="B300">{u.deactivated ? 'Reactivate' : 'Deactivate'}</Text>
+                            </Chip>
+                          </Box>
+                        }
+                      />
+                    </SequenceCard>
+                  ))
+                )}
+              </Box>
             </Box>
-          </Box>
+          </PageContent>
         </Scroll>
       </Box>
-    </Box>
+    </Page>
   );
 }
