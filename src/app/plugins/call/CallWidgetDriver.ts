@@ -26,6 +26,7 @@ import {
 } from 'matrix-js-sdk';
 import { getCallCapabilities } from './utils';
 import { downloadMedia, mxcUrlToHttp } from '../../utils/matrix';
+import { verifiedDevice } from '../../utils/matrix-crypto';
 
 export class CallWidgetDriver extends WidgetDriver {
   private allowedCapabilities: Set<Capability>;
@@ -156,12 +157,47 @@ export class CallWidgetDriver extends WidgetDriver {
       const crypto = client.getCrypto();
       if (!crypto) throw new Error('E2EE not enabled');
 
+      // smokesignals §9.4 — ENFORCE the §9.1 key-withholding policy on call media keys.
+      // matrix-js-sdk's encryptToDeviceMessages encrypts to EVERY device it is handed with NO
+      // verification filtering, and `globalBlacklistUnverifiedDevices` only governs room/Megolm
+      // traffic — NOT this to-device path. Element Call builds the recipient device list from
+      // call-membership state, which a malicious homeserver can manipulate to inject a device.
+      // So we filter the recipients to CROSS-SIGNED devices ONLY, here at the host send path,
+      // before encrypting — making voice/video media keys governed by the same policy as text
+      // (the §9.4 T3 trust gate). An un-cross-signed/injected device gets no usable media key.
+      const verdicts = await Promise.all(
+        Object.keys(contentMap).flatMap((userId) =>
+          Object.keys(contentMap[userId]).map(async (deviceId) => ({
+            userId,
+            deviceId,
+            ok: (await verifiedDevice(crypto, userId, deviceId)) === true,
+          }))
+        )
+      );
+      const filteredMap: { [userId: string]: { [deviceId: string]: object } } = {};
+      let withheld = 0;
+      // eslint-disable-next-line no-restricted-syntax
+      for (const { userId, deviceId, ok } of verdicts) {
+        if (ok) {
+          filteredMap[userId] = filteredMap[userId] || {};
+          filteredMap[userId][deviceId] = contentMap[userId][deviceId];
+        } else {
+          withheld += 1;
+        }
+      }
+      if (withheld > 0) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[smokesignals §9.4] withheld call media key from ${withheld} un-cross-signed device(s)`
+        );
+      }
+
       // attempt to re-batch these up into a single request
       const invertedContentMap: { [content: string]: { userId: string; deviceId: string }[] } = {};
 
       // eslint-disable-next-line no-restricted-syntax
-      for (const userId of Object.keys(contentMap)) {
-        const userContentMap = contentMap[userId];
+      for (const userId of Object.keys(filteredMap)) {
+        const userContentMap = filteredMap[userId];
         // eslint-disable-next-line no-restricted-syntax
         for (const deviceId of Object.keys(userContentMap)) {
           const content = userContentMap[deviceId];

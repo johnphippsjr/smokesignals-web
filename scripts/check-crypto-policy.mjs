@@ -13,6 +13,7 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8');
 const initMatrix = read('src/client/initMatrix.ts');
 const identityHook = read('src/app/hooks/useRoomIdentityViolations.ts');
 const roomView = read('src/app/features/room/RoomView.tsx');
+const callDriver = read('src/app/plugins/call/CallWidgetDriver.ts');
 
 const checks = [
   // §9.1 (1)(2) — hard key-withholding, both directions, in initMatrix.ts
@@ -41,6 +42,17 @@ const checks = [
     name: '§9.1.7 hard-block  RoomView renders RoomIdentityBlock when violations exist',
     src: roomView,
     re: /identityViolations\.length\s*>\s*0[\s\S]*?<RoomIdentityBlock/,
+  },
+  // §9.4 — call media keys governed by §9.1 (filter to-device recipients to cross-signed devices)
+  {
+    name: '§9.4 voice     CallWidgetDriver imports verifiedDevice (recipient filter helper)',
+    src: callDriver,
+    re: /import\s*\{\s*verifiedDevice\s*\}\s*from/,
+  },
+  {
+    name: '§9.4 voice     encrypted sendToDevice filters recipients to cross-signed devices',
+    src: callDriver,
+    re: /verifiedDevice\(crypto[\s\S]*?filteredMap/,
   },
 ];
 
