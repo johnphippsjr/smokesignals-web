@@ -37,6 +37,7 @@ import { AuthMetadataProvider } from '../../hooks/useAuthMetadata';
 import { getFallbackSession } from '../../state/sessions';
 import { AutoDiscovery } from './AutoDiscovery';
 import { VerificationBanner } from '../../components/VerificationBanner';
+import { KeyBackupBanner } from '../../components/KeyBackupBanner';
 
 function ClientRootLoading() {
   return (
@@ -221,6 +222,7 @@ export function ClientRoot({ children }: ClientRootProps) {
         ) : (
           <MatrixClientProvider value={mx}>
             <VerificationBanner />
+            <KeyBackupBanner />
             <ServerConfigsLoader>
               {(serverConfigs) => (
                 <CapabilitiesProvider value={serverConfigs.capabilities ?? {}}>
