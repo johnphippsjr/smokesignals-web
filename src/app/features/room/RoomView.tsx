@@ -13,6 +13,8 @@ import { RoomTimeline } from './RoomTimeline';
 import { RoomViewTyping } from './RoomViewTyping';
 import { RoomTombstone } from './RoomTombstone';
 import { RoomInput } from './RoomInput';
+import { RoomIdentityBlock } from './RoomIdentityBlock';
+import { useRoomIdentityViolations } from '../../hooks/useRoomIdentityViolations';
 import { RoomViewFollowing, RoomViewFollowingPlaceholder } from './RoomViewFollowing';
 import { Page } from '../../components/page';
 import { useKeyDown } from '../../hooks/useKeyDown';
@@ -73,6 +75,9 @@ export function RoomView({ eventId }: { eventId?: string }) {
   const permissions = useRoomPermissions(creators, powerLevels);
   const canMessage = permissions.event(EventType.RoomMessage, mx.getSafeUserId());
 
+  // smokesignals §9.1.7 — if any contact's master identity changed, HARD-BLOCK sending.
+  const identityViolations = useRoomIdentityViolations(room);
+
   useKeyDown(
     window,
     useCallback(
@@ -112,15 +117,18 @@ export function RoomView({ eventId }: { eventId?: string }) {
             />
           ) : (
             <>
-              {canMessage && (
-                <RoomInput
-                  room={room}
-                  editor={editor}
-                  roomId={roomId}
-                  fileDropContainerRef={roomViewRef}
-                  ref={roomInputRef}
-                />
-              )}
+              {canMessage &&
+                (identityViolations.length > 0 ? (
+                  <RoomIdentityBlock room={room} violations={identityViolations} />
+                ) : (
+                  <RoomInput
+                    room={room}
+                    editor={editor}
+                    roomId={roomId}
+                    fileDropContainerRef={roomViewRef}
+                    ref={roomInputRef}
+                  />
+                ))}
               {!canMessage && (
                 <RoomInputPlaceholder
                   style={{ padding: config.space.S200 }}
